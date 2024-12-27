@@ -1,0 +1,94 @@
+Để tiếp tục, bạn có thể làm theo các bước sau:
+
+1. Chuẩn bị dữ liệu
+	•	Đảm bảo rằng bạn có 2 tập dữ liệu:
+	•	Hình ảnh gốc (size 512x512).
+	•	Hình ảnh mask (size tương ứng với hình gốc, với giá trị pixel đại diện cho các lớp phân đoạn).
+	•	Tổ chức dữ liệu thành các thư mục rõ ràng:
+
+dataset/
+  images/    # Chứa ảnh gốc
+  masks/     # Chứa ảnh mask
+
+
+	•	Nếu cần, viết script Python để kiểm tra sự tương ứng giữa ảnh gốc và ảnh mask.
+
+2. Tạo Data Generator
+	•	Sử dụng ImageDataGenerator hoặc tf.keras.utils.Sequence để tạo một generator tùy chỉnh load dữ liệu và thực hiện augmentation nếu cần:
+
+import os
+import numpy as np
+import cv2
+from tensorflow.keras.utils import Sequence
+
+class DataGenerator(Sequence):
+    def __init__(self, images_path, masks_path, batch_size, img_size):
+        self.images_path = images_path
+        self.masks_path = masks_path
+        self.batch_size = batch_size
+        self.img_size = img_size
+        self.image_files = os.listdir(images_path)
+
+    def __len__(self):
+        return len(self.image_files) // self.batch_size
+
+    def __getitem__(self, idx):
+        batch_images = self.image_files[idx * self.batch_size:(idx + 1) * self.batch_size]
+        images = []
+        masks = []
+        for img_file in batch_images:
+            img = cv2.imread(os.path.join(self.images_path, img_file))
+            img = cv2.resize(img, self.img_size) / 255.0
+            mask = cv2.imread(os.path.join(self.masks_path, img_file), cv2.IMREAD_GRAYSCALE)
+            mask = cv2.resize(mask, self.img_size) / 255.0
+            images.append(img)
+            masks.append(mask)
+        return np.array(images), np.array(masks)
+
+3. Chọn mô hình
+	•	Import và khởi tạo mô hình từ segmentation_models:
+
+from segmentation_models import Unet
+from segmentation_models.losses import bce_jaccard_loss
+from segmentation_models.metrics import iou_score
+
+model = Unet('resnet34', encoder_weights='imagenet', classes=1, activation='sigmoid')
+model.compile(optimizer='adam', loss=bce_jaccard_loss, metrics=[iou_score])
+
+	•	Thay Unet bằng FPN, Linknet, hoặc PSPNet nếu cần.
+
+4. Huấn luyện mô hình
+	•	Khởi chạy quá trình huấn luyện:
+
+train_gen = DataGenerator('dataset/images', 'dataset/masks', batch_size=16, img_size=(512, 512))
+model.fit(train_gen, epochs=50)
+
+5. Đánh giá và kiểm tra
+	•	Sau khi train xong, kiểm tra mô hình bằng tập dữ liệu test:
+
+test_images, test_masks = next(iter(train_gen))
+pred_masks = model.predict(test_images)
+
+# Hiển thị kết quả
+import matplotlib.pyplot as plt
+plt.figure(figsize=(10, 5))
+for i in range(3):  # Hiển thị 3 ảnh đầu
+    plt.subplot(3, 3, i*3+1)
+    plt.imshow(test_images[i])
+    plt.title("Image")
+    plt.subplot(3, 3, i*3+2)
+    plt.imshow(test_masks[i].squeeze(), cmap='gray')
+    plt.title("True Mask")
+    plt.subplot(3, 3, i*3+3)
+    plt.imshow(pred_masks[i].squeeze(), cmap='gray')
+    plt.title("Predicted Mask")
+plt.show()
+
+6. Lưu và triển khai mô hình
+	•	Lưu mô hình:
+
+model.save("segmentation_model.h5")
+
+	•	Nếu muốn triển khai, có thể dùng TensorFlow Serving hoặc tích hợp trực tiếp vào ứng dụng của bạn.
+
+Bạn đã có cơ sở hạ tầng rồi, giờ chỉ cần làm các bước trên! Nếu có thắc mắc, mình có thể hỗ trợ thêm.
