@@ -1,4 +1,280 @@
-Tôi sẽ giải thích chi tiết mã nguồn trong file `pim_module.py` mà bạn đang xem xét từ repository `FGVC-HERBS`. Vì bạn chỉ biết Python và không quen thuộc với FGVC (Fine-Grained Visual Classification) hay Machine Learning, tôi sẽ cố gắng giải thích từng phần một cách đơn giản, dễ hiểu, như thể bạn là người mới bắt đầu. Tôi sẽ tập trung vào việc giải thích ý nghĩa của code theo cách lập trình viên Python có thể hiểu, đồng thời liên hệ với mục đích của nó trong ngữ cảnh Machine Learning mà không đi quá sâu vào lý thuyết phức tạp.
+Được rồi, tôi sẽ giải thích chi tiết hơn từng phần trong file `pim_module.py`, đi sâu vào từng dòng code trong các lớp chính (`GCNCombiner`, `WeaklySelector`, `FPN`, `FPN_UP`, và `PluginMoodel`). Tôi sẽ giải thích từng đoạn code nhỏ, ý nghĩa của nó trong Python, và cách nó hoạt động trong ngữ cảnh xử lý dữ liệu. Vì bạn chỉ biết Python và không quen thuộc với Machine Learning, tôi sẽ cố gắng liên tưởng đến các khái niệm quen thuộc trong lập trình để bạn dễ hình dung.
+
+---
+
+### **1. `GCNCombiner`**
+#### **Khởi tạo (`__init__`)**
+```python
+def __init__(self, 
+             total_num_selects: int,
+             num_classes: int, 
+             inputs: Union[dict, None] = None, 
+             proj_size: Union[int, None] = None,
+             fpn_size: Union[int, None] = None):
+    super(GCNCombiner, self).__init__()
+```
+- **`total_num_selects`**: Một số nguyên, ví dụ `2048`, biểu thị tổng số đặc trưng (features) được chọn từ các tầng trước đó.
+- **`num_classes`**: Số lớp cần phân loại, ví dụ `10` nếu bạn muốn phân biệt 10 loại cây.
+- **`inputs`**: Một từ điển (dictionary) chứa các tensor (mảng đa chiều) từ backbone nếu không dùng FPN. Ví dụ: `{"layer1": tensor, "layer2": tensor}`.
+- **`proj_size`**: Kích thước để chiếu dữ liệu nếu không dùng FPN, ví dụ `512`.
+- **`fpn_size`**: Kích thước đặc trưng nếu dùng FPN, ví dụ `256`.
+- **`super(GCNCombiner, self).__init__()`**: Gọi hàm khởi tạo của lớp cha (`nn.Module`) trong PyTorch để thiết lập lớp này như một mô-đun mạng nơ-ron.
+
+```python
+assert inputs is not None or fpn_size is not None, \
+    "To build GCN combiner, you must give one features dimension."
+```
+- Đây là kiểm tra điều kiện: Nếu cả `inputs` và `fpn_size` đều là `None`, chương trình sẽ báo lỗi. Nghĩa là bạn phải cung cấp ít nhất một cách để xác định kích thước dữ liệu đầu vào.
+
+##### **Xử lý Projection**
+```python
+self.fpn_size = fpn_size
+if fpn_size is None:
+    for name in inputs:
+        if len(name) == 4:
+            in_size = inputs[name].size(1)
+        elif len(name) == 3:
+            in_size = inputs[name].size(2)
+        else:
+            raise ValueError("The size of output dimension of previous must be 3 or 4.")
+        m = nn.Sequential(
+            nn.Linear(in_size, proj_size),
+            nn.ReLU(),
+            nn.Linear(proj_size, proj_size)
+        )
+        self.add_module("proj_"+name, m)
+    self.proj_size = proj_size
+else:
+    self.proj_size = fpn_size
+```
+- **`self.fpn_size = fpn_size`**: Lưu giá trị `fpn_size` để dùng sau.
+- **Nếu không dùng FPN (`fpn_size is None`)**:
+  - Lặp qua các key (`name`) trong `inputs` (ví dụ: `"layer1"`, `"layer2"`).
+  - Kiểm tra kích thước tensor:
+    - Nếu tensor có 4 chiều (B, C, H, W), lấy `in_size` từ chiều thứ 2 (`inputs[name].size(1)`).
+    - Nếu tensor có 3 chiều (B, S, C), lấy `in_size` từ chiều thứ 3 (`inputs[name].size(2)`).
+    - Nếu không phải 3 hoặc 4 chiều, báo lỗi.
+  - Tạo một chuỗi tầng (`nn.Sequential`):
+    - `nn.Linear(in_size, proj_size)`: Biến đổi tuyến tính từ `in_size` sang `proj_size`.
+    - `nn.ReLU()`: Hàm kích hoạt, biến số âm thành 0, giữ số dương (giống như lọc dữ liệu).
+    - `nn.Linear(proj_size, proj_size)`: Một biến đổi tuyến tính nữa để tinh chỉnh.
+  - Thêm chuỗi này vào mô-đun với tên `"proj_" + name` (ví dụ: `"proj_layer1"`).
+  - Gán `self.proj_size = proj_size`.
+- **Nếu dùng FPN**: `self.proj_size = fpn_size`, không cần tạo tầng projection.
+
+##### **Xây dựng GCN**
+```python
+num_joints = total_num_selects // 64
+self.param_pool0 = nn.Linear(total_num_selects, num_joints)
+A = torch.eye(num_joints) / 100 + 1 / 100
+self.adj1 = nn.Parameter(copy.deepcopy(A))
+self.conv1 = nn.Conv1d(self.proj_size, self.proj_size, 1)
+self.batch_norm1 = nn.BatchNorm1d(self.proj_size)
+self.conv_q1 = nn.Conv1d(self.proj_size, self.proj_size//4, 1)
+self.conv_k1 = nn.Conv1d(self.proj_size, self.proj_size//4, 1)
+self.alpha1 = nn.Parameter(torch.zeros(1))
+```
+- **`num_joints = total_num_selects // 64`**: Chia tổng số đặc trưng cho 64 để giảm kích thước (ví dụ: `2048 // 64 = 32`).
+- **`self.param_pool0 = nn.Linear(total_num_selects, num_joints)`**: Tầng tuyến tính giảm số đặc trưng từ `total_num_selects` xuống `num_joints`.
+- **`A = torch.eye(num_joints) / 100 + 1 / 100`**: Tạo ma trận đơn vị (đường chéo là 1, còn lại là 0), chia nhỏ giá trị để khởi tạo ma trận adjacency ban đầu.
+- **`self.adj1 = nn.Parameter(...)`**: Biến `A` thành tham số có thể học được.
+- **`self.conv1 = nn.Conv1d(...)`**: Tầng tích chập 1D, giữ nguyên kích thước `proj_size`.
+- **`self.batch_norm1 = nn.BatchNorm1d(...)`**: Chuẩn hóa dữ liệu để ổn định.
+- **`self.conv_q1`, `self.conv_k1`**: Hai tầng tích chập giảm kích thước xuống `proj_size//4` để tính ma trận adjacency động.
+- **`self.alpha1`**: Tham số điều chỉnh mức độ ảnh hưởng của ma trận động.
+
+##### **Tầng cuối**
+```python
+self.param_pool1 = nn.Linear(num_joints, 1)
+self.dropout = nn.Dropout(p=0.1)
+self.classifier = nn.Linear(self.proj_size, num_classes)
+self.tanh = nn.Tanh()
+```
+- **`self.param_pool1`**: Giảm từ `num_joints` xuống 1 để tổng hợp dữ liệu.
+- **`self.dropout`**: Ngẫu nhiên bỏ 10% dữ liệu để tránh overfitting.
+- **`self.classifier`**: Dự đoán lớp từ `proj_size` sang `num_classes`.
+- **`self.tanh`**: Hàm kích hoạt giới hạn giá trị từ -1 đến 1.
+
+#### **Xử lý dữ liệu (`forward`)**
+```python
+def forward(self, x):
+    hs = []
+    names = []
+    for name in x:
+        if "FPN1_" in name:
+            continue
+        if self.fpn_size is None:
+            _tmp = getattr(self, "proj_"+name)(x[name])
+        else:
+            _tmp = x[name]
+        hs.append(_tmp)
+        names.append([name, _tmp.size()])
+```
+- **`x`**: Từ điển chứa tensor đặc trưng (ví dụ: `{"layer1": tensor, "layer2": tensor}`).
+- Bỏ qua các key có `"FPN1_"` (đặc trưng từ FPN).
+- Nếu không dùng FPN, áp dụng tầng projection (`proj_*`), nếu không thì giữ nguyên tensor.
+- Lưu tensor đã xử lý vào `hs` và thông tin kích thước vào `names`.
+
+```python
+hs = torch.cat(hs, dim=1).transpose(1, 2).contiguous()
+hs = self.param_pool0(hs)
+```
+- **`torch.cat(hs, dim=1)`**: Ghép tất cả tensor trong `hs` theo chiều 1 (trở thành [B, S', C], với S' là tổng số đặc trưng).
+- **`.transpose(1, 2)`**: Hoán đổi chiều 1 và 2 thành [B, C, S'].
+- **`.contiguous()`**: Đảm bảo tensor liền mạch trong bộ nhớ.
+- **`self.param_pool0(hs)`**: Giảm số đặc trưng từ S' xuống `num_joints`.
+
+```python
+q1 = self.conv_q1(hs).mean(1)
+k1 = self.conv_k1(hs).mean(1)
+A1 = self.tanh(q1.unsqueeze(-1) - k1.unsqueeze(1))
+A1 = self.adj1 + A1 * self.alpha1
+```
+- **`q1`, `k1`**: Tính hai vector đại diện bằng tích chập và lấy trung bình.
+- **`A1`**: Tính ma trận adjacency động bằng cách trừ `q1` và `k1`, áp dụng `tanh`, rồi cộng với `adj1` và nhân `alpha1`.
+
+```python
+hs = self.conv1(hs)
+hs = torch.matmul(hs, A1)
+hs = self.batch_norm1(hs)
+hs = self.param_pool1(hs)
+hs = self.dropout(hs)
+hs = hs.flatten(1)
+hs = self.classifier(hs)
+return hs
+```
+- Áp dụng tích chập, nhân với ma trận `A1`, chuẩn hóa, giảm chiều, dropout, làm phẳng, và dự đoán lớp.
+
+---
+
+### **2. `WeaklySelector`**
+#### **Khởi tạo (`__init__`)**
+```python
+def __init__(self, inputs: dict, num_classes: int, num_select: dict, fpn_size: Union[int, None] = None):
+    super(WeaklySelector, self).__init__()
+    self.num_select = num_select
+    self.fpn_size = fpn_size
+```
+- **`num_select`**: Từ điển chỉ định số đặc trưng cần chọn (ví dụ: `{"layer1": 2048}`).
+
+```python
+if self.fpn_size is None:
+    self.num_classes = num_classes
+    for name in inputs:
+        fs_size = inputs[name].size()
+        if len(fs_size) == 3:
+            in_size = fs_size[2]
+        elif len(fs_size) == 4:
+            in_size = fs_size[1]
+        m = nn.Linear(in_size, num_classes)
+        self.add_module("classifier_l_"+name, m)
+```
+- Nếu không dùng FPN, tạo bộ phân loại cho mỗi tầng để dự đoán lớp.
+
+```python
+self.thresholds = {}
+for name in inputs:
+    self.thresholds[name] = []
+```
+- Tạo từ điển `thresholds` để lưu ngưỡng chọn lọc.
+
+#### **Xử lý dữ liệu (`forward`)**
+```python
+def forward(self, x, logits=None):
+    if self.fpn_size is None:
+        logits = {}
+    selections = {}
+    for name in x:
+        if "FPN1_" in name:
+            continue
+        if len(x[name].size()) == 4:
+            B, C, H, W = x[name].size()
+            x[name] = x[name].view(B, C, H*W).permute(0, 2, 1).contiguous()
+        C = x[name].size(-1)
+        if self.fpn_size is None:
+            logits[name] = getattr(self, "classifier_l_"+name)(x[name])
+```
+- Chuyển tensor 4D thành 3D nếu cần, tính `logits` nếu không dùng FPN.
+
+```python
+probs = torch.softmax(logits[name], dim=-1)
+sum_probs = torch.softmax(logits[name].mean(1), dim=-1)
+selections[name] = []
+preds_1 = []
+preds_0 = []
+num_select = self.num_select[name]
+for bi in range(logits[name].size(0)):
+    _, max_ids = torch.max(sum_probs[bi], dim=-1)
+    confs, ranks = torch.sort(probs[bi, :, max_ids], descending=True)
+    sf = x[name][bi][ranks[:num_select]]
+    nf = x[name][bi][ranks[num_select:]]
+    selections[name].append(sf)
+    preds_1.append(logits[name][bi][ranks[:num_select]])
+    preds_0.append(logits[name][bi][ranks[num_select:]])
+    if bi >= len(self.thresholds[name]):
+        self.thresholds[name].append(confs[num_select])
+    else:
+        self.thresholds[name][bi] = confs[num_select]
+```
+- Tính xác suất, chọn đặc trưng có xác suất cao nhất, lưu vào `selections`.
+
+---
+
+### **3. `FPN`**
+#### **Khởi tạo (`__init__`)**
+```python
+def __init__(self, inputs: dict, fpn_size: int, proj_type: str, upsample_type: str):
+    super(FPN, self).__init__()
+    assert proj_type in ["Conv", "Linear"]
+    assert upsample_type in ["Bilinear", "Conv"]
+```
+- Kiểm tra loại projection và upsample hợp lệ.
+
+```python
+self.fpn_size = fpn_size
+self.upsample_type = upsample_type
+inp_names = [name for name in inputs]
+for i, node_name in enumerate(inputs):
+    if proj_type == "Conv":
+        m = nn.Sequential(
+            nn.Conv2d(inputs[node_name].size(1), inputs[node_name].size(1), 1),
+            nn.ReLU(),
+            nn.Conv2d(inputs[node_name].size(1), fpn_size, 1)
+        )
+    elif proj_type == "Linear":
+        m = nn.Sequential(
+            nn.Linear(inputs[node_name].size(-1), inputs[node_name].size(-1)),
+            nn.ReLU(),
+            nn.Linear(inputs[node_name].size(-1), fpn_size),
+        )
+    self.add_module("Proj_"+node_name, m)
+```
+- Tạo tầng projection tùy theo loại.
+
+#### **Xử lý dữ liệu (`forward`)**
+```python
+def forward(self, x):
+    hs = []
+    for i, name in enumerate(x):
+        if "FPN1_" in name:
+            continue
+        x[name] = getattr(self, "Proj_"+name)(x[name])
+        hs.append(name)
+    x["FPN1_" + "layer4"] = x["layer4"]
+    for i in range(len(hs)-1, 0, -1):
+        x1_name = hs[i]
+        x0_name = hs[i-1]
+        x[x0_name] = self.upsample_add(x[x0_name], x[x1_name], x1_name)
+        x["FPN1_" + x0_name] = x[x0_name]
+    return x
+```
+- Chiếu đặc trưng, kết hợp từ tầng cao xuống thấp.
+
+---
+
+Do giới hạn ký tự, tôi sẽ dừng ở đây và tiếp tục ở phản hồi sau nếu bạn muốn. Bạn có muốn tôi giải thích thêm phần nào không?
+
+
 
 File này định nghĩa một số lớp (class) trong PyTorch – một thư viện phổ biến để xây dựng mô hình học sâu (deep learning). Các lớp này là các thành phần của một mô hình mạng nơ-ron (neural network) được thiết kế để xử lý hình ảnh, cụ thể là phân loại chi tiết (fine-grained classification). Hãy cùng phân tích từng lớp một cách rõ ràng.
 
@@ -156,3 +432,253 @@ Giống `FPN`, nhưng xử lý theo hướng ngược lại: từ tầng thấp 
 Với Python, bạn có thể xem mỗi lớp như một hàm lớn nhận đầu vào (tensor), xử lý bằng các phép toán (như nhân ma trận, cộng), và trả về đầu ra. Trong Machine Learning, các phép toán này được thiết kế để "học" từ dữ liệu, nhưng với bạn, cứ hiểu chúng như các bước xử lý dữ liệu tuần tự.
 
 Nếu bạn muốn tôi giải thích sâu hơn về bất kỳ phần nào hoặc cách chạy code này, cứ hỏi nhé!
+
+Tôi sẽ tiếp tục giải thích chi tiết các phần còn lại trong file `pim_module.py`, cụ thể là lớp **`FPN_UP`** và **`PluginMoodel`**. Tôi sẽ đi từng dòng code, giải thích ý nghĩa trong Python, cách nó xử lý dữ liệu, và liên tưởng để bạn dễ hiểu với tư cách là người chỉ biết Python mà không quen thuộc với Machine Learning.
+
+---
+
+### **4. `FPN_UP`**
+#### **Mục đích**
+Lớp này là một biến thể của `FPN` (Feature Pyramid Network), nhưng thay vì kết hợp đặc trưng từ tầng cao (ít chi tiết) xuống tầng thấp (nhiều chi tiết), nó làm ngược lại: từ tầng thấp lên tầng cao. Nghĩa là nó "rút gọn" thông tin chi tiết để phù hợp với các tầng tổng quát hơn.
+
+#### **Khởi tạo (`__init__`)**
+```python
+def __init__(self, 
+             inputs: dict, 
+             fpn_size: int):
+    super(FPN_UP, self).__init__()
+```
+- **`inputs`**: Từ điển chứa các tensor đặc trưng từ backbone (ví dụ: `{"layer1": tensor, "layer2": tensor}`).
+- **`fpn_size`**: Kích thước chung mà tất cả đặc trưng sẽ được chiếu về (ví dụ: `256`).
+- **`super(FPN_UP, self).__init__()`**: Gọi hàm khởi tạo của lớp cha (`nn.Module`) trong PyTorch.
+
+```python
+inp_names = [name for name in inputs]
+```
+- Tạo danh sách các tên đặc trưng (ví dụ: `["layer1", "layer2", "layer3"]`) để truy cập dễ dàng.
+
+```python
+for i, node_name in enumerate(inputs):
+    ### projection module
+    m = nn.Sequential(
+        nn.Linear(fpn_size, fpn_size),
+        nn.ReLU(),
+        nn.Linear(fpn_size, fpn_size),
+    )
+    self.add_module("Proj_"+node_name, m)
+```
+- Lặp qua từng tên đặc trưng (`node_name`) trong `inputs`.
+- Tạo một chuỗi tầng (`nn.Sequential`) cho projection:
+  - **`nn.Linear(fpn_size, fpn_size)`**: Biến đổi tuyến tính, giữ nguyên kích thước (giống như một bước "tinh chỉnh").
+  - **`nn.ReLU()`**: Hàm kích hoạt, đổi số âm thành 0, giữ số dương.
+  - **`nn.Linear(fpn_size, fpn_size)`**: Một biến đổi nữa để xử lý thêm.
+- Thêm chuỗi này vào mô-đun với tên `"Proj_" + node_name` (ví dụ: `"Proj_layer1"`).
+
+```python
+if i != (len(inputs) - 1):
+    assert len(inputs[node_name].size()) == 3  # B, S, C
+    in_dim = inputs[node_name].size(1)
+    out_dim = inputs[inp_names[i+1]].size(1)
+    m = nn.Conv1d(in_dim, out_dim, 1)  # for spatial domain
+    self.add_module("Down_"+node_name, m)
+```
+- Với mỗi tầng trừ tầng cuối cùng:
+  - Kiểm tra tensor phải có 3 chiều (B, S, C), với B là batch size, S là số đặc trưng không gian, C là số kênh.
+  - **`in_dim`**: Lấy số lượng đặc trưng không gian từ tầng hiện tại (chiều 1).
+  - **`out_dim`**: Lấy số lượng đặc trưng không gian từ tầng tiếp theo (để khớp kích thước).
+  - **`nn.Conv1d(in_dim, out_dim, 1)`**: Tầng tích chập 1D để giảm hoặc tăng số đặc trưng từ `in_dim` sang `out_dim`.
+  - Thêm tầng này với tên `"Down_" + node_name` (ví dụ: `"Down_layer1"`).
+
+#### **Hàm hỗ trợ (`downsample_add`)**
+```python
+def downsample_add(self, x0: torch.Tensor, x1: torch.Tensor, x0_name: str):
+    x0 = getattr(self, "Down_" + x0_name)(x0)
+    return x1 + x0
+```
+- **`x0`**: Tensor từ tầng thấp hơn (nhiều đặc trưng hơn).
+- **`x1`**: Tensor từ tầng cao hơn (ít đặc trưng hơn).
+- **`x0_name`**: Tên của tầng thấp hơn (ví dụ: `"layer1"`).
+- Áp dụng tầng `"Down_" + x0_name` để giảm kích thước `x0` sao cho khớp với `x1`, rồi cộng `x1 + x0`.
+- **Dễ hiểu**: Nghĩ như bạn có danh sách dài (x0) và danh sách ngắn (x1). Bạn rút gọn danh sách dài để bằng độ dài danh sách ngắn, rồi cộng từng phần tử tương ứng.
+
+#### **Xử lý dữ liệu (`forward`)**
+```python
+def forward(self, x):
+    hs = []
+    for i, name in enumerate(x):
+        if "FPN1_" in name:
+            continue
+        x[name] = getattr(self, "Proj_"+name)(x[name])
+        hs.append(name)
+```
+- **`x`**: Từ điển chứa tensor đặc trưng.
+- Bỏ qua các key có `"FPN1_"`.
+- Áp dụng tầng projection (`Proj_*`) cho từng tensor, lưu tên vào `hs`.
+
+```python
+for i in range(0, len(hs) - 1):
+    x0_name = hs[i]
+    x1_name = hs[i+1]
+    x[x1_name] = self.downsample_add(x[x0_name], x[x1_name], x0_name)
+return x
+```
+- Lặp từ tầng thấp lên tầng cao:
+  - **`x0_name`**: Tầng thấp hơn (ví dụ: `"layer1"`).
+  - **`x1_name`**: Tầng cao hơn (ví dụ: `"layer2"`).
+  - Gọi `downsample_add` để kết hợp `x[x0_name]` và `x[x1_name]`, cập nhật `x[x1_name]`.
+- Trả về từ điển `x` đã được xử lý.
+
+#### **Dễ hiểu với Python**
+- Bạn có nhiều danh sách số với độ dài khác nhau (đặc trưng từ các tầng).
+- Bạn tinh chỉnh từng danh sách qua các phép toán (`Proj_*`).
+- Bạn rút gọn danh sách dài hơn để khớp với danh sách ngắn hơn bên trên, rồi cộng chúng lại.
+
+---
+
+### **5. `PluginMoodel`**
+#### **Mục đích**
+Đây là lớp chính, giống như "bộ điều khiển" của toàn bộ mô hình. Nó kết hợp một backbone (mô hình nền như ResNet) với các thành phần như FPN, Selector, và Combiner để xử lý ảnh và dự đoán lớp.
+
+#### **Khởi tạo (`__init__`)**
+```python
+def __init__(self, 
+             backbone: torch.nn.Module,
+             return_nodes: Union[dict, None],
+             img_size: int,
+             use_fpn: bool,
+             fpn_size: Union[int, None],
+             proj_type: str,
+             upsample_type: str,
+             use_selection: bool,
+             num_classes: int,
+             num_selects: dict, 
+             use_combiner: bool,
+             comb_proj_size: Union[int, None]
+             ):
+    super(PluginMoodel, self).__init__()
+```
+- **`backbone`**: Mô hình nền (ví dụ: ResNet).
+- **`return_nodes`**: Từ điển chỉ định tầng nào trong backbone sẽ lấy đặc trưng (ví dụ: `{"layer4.2.relu_2": "layer4"}`).
+- **`img_size`**: Kích thước ảnh đầu vào (ví dụ: `224` cho 224x224).
+- **`use_fpn`, `use_selection`, `use_combiner`**: Các cờ bool để bật/tắt FPN, Selector, Combiner.
+- **`fpn_size`, `proj_type`, `upsample_type`**: Cấu hình cho FPN.
+- **`num_classes`**: Số lớp cần phân loại.
+- **`num_selects`**: Từ điển chỉ định số đặc trưng chọn cho mỗi tầng.
+- **`comb_proj_size`**: Kích thước chiếu cho Combiner nếu không dùng FPN.
+
+##### **Thiết lập Backbone**
+```python
+self.return_nodes = return_nodes
+if return_nodes is not None:
+    self.backbone = create_feature_extractor(backbone, return_nodes=return_nodes)
+else:
+    self.backbone = backbone
+```
+- Nếu có `return_nodes`, dùng `create_feature_extractor` để lấy đặc trưng từ các tầng cụ thể. Nếu không, dùng `backbone` nguyên bản.
+
+```python
+rand_in = torch.randn(1, 3, img_size, img_size)
+outs = self.backbone(rand_in)
+```
+- Tạo tensor ngẫu nhiên kích thước `[1, 3, img_size, img_size]` (1 ảnh, 3 kênh màu RGB).
+- Chạy qua backbone để lấy đặc trưng mẫu (`outs`).
+
+##### **Nếu không dùng FPN/Selector/Combiner**
+```python
+if not use_fpn and (not use_selection and not use_combiner):
+    for name in outs:
+        fs_size = outs[name].size()
+        if len(fs_size) == 3:
+            out_size = fs_size[-1]
+        elif len(fs_size) == 4:
+            out_size = fs_size[1]
+    self.classifier = nn.Linear(out_size, num_classes)
+```
+- Nếu chỉ dùng backbone, tạo một tầng phân loại từ kích thước đặc trưng cuối cùng (`out_size`) sang `num_classes`.
+
+##### **Thiết lập FPN**
+```python
+self.use_fpn = use_fpn
+if self.use_fpn:
+    self.fpn_down = FPN(outs, fpn_size, proj_type, upsample_type)
+    self.build_fpn_classifier_down(outs, fpn_size, num_classes)
+    self.fpn_up = FPN_UP(outs, fpn_size)
+    self.build_fpn_classifier_up(outs, fpn_size, num_classes)
+self.fpn_size = fpn_size
+```
+- Nếu dùng FPN, tạo `fpn_down` (từ cao xuống thấp) và `fpn_up` (từ thấp lên cao), cùng các bộ phân loại.
+
+##### **Thiết lập Selector và Combiner**
+```python
+self.use_selection = use_selection
+if self.use_selection:
+    w_fpn_size = self.fpn_size if self.use_fpn else None
+    self.selector = WeaklySelector(outs, num_classes, num_selects, w_fpn_size)
+
+self.use_combiner = use_combiner
+if self.use_combiner:
+    assert self.use_selection, "Please use selection module before combiner"
+    if self.use_fpn:
+        gcn_inputs, gcn_proj_size = None, None
+    else:
+        gcn_inputs, gcn_proj_size = outs, comb_proj_size
+    total_num_selects = sum([num_selects[name] for name in num_selects])
+    self.combiner = GCNCombiner(total_num_selects, num_classes, gcn_inputs, gcn_proj_size, self.fpn_size)
+```
+- Nếu dùng Selector, tạo `WeaklySelector`.
+- Nếu dùng Combiner, yêu cầu phải có Selector trước, tạo `GCNCombiner` với tổng số đặc trưng từ `num_selects`.
+
+#### **Xử lý dữ liệu (`forward`)**
+```python
+def forward(self, x: torch.Tensor):
+    logits = {}
+    x = self.forward_backbone(x)
+```
+- **`x`**: Tensor ảnh đầu vào (ví dụ: `[B, 3, 224, 224]`).
+- Chạy qua backbone để lấy đặc trưng.
+
+```python
+if self.use_fpn:
+    x = self.fpn_down(x)
+    self.fpn_predict_down(x, logits)
+    x = self.fpn_up(x)
+    self.fpn_predict_up(x, logits)
+```
+- Nếu dùng FPN, chạy qua `fpn_down` và `fpn_up`, dự đoán trên từng tầng.
+
+```python
+if self.use_selection:
+    selects = self.selector(x, logits)
+if self.use_combiner:
+    comb_outs = self.combiner(selects)
+    logits['comb_outs'] = comb_outs
+    return logits
+```
+- Nếu dùng Selector, chọn đặc trưng. Nếu dùng Combiner, kết hợp và trả về dự đoán.
+
+```python
+if self.use_selection or self.fpn:
+    return logits
+for name in x:
+    hs = x[name]
+if len(hs.size()) == 4:
+    hs = F.adaptive_avg_pool2d(hs, (1, 1))
+    hs = hs.flatten(1)
+else:
+    hs = hs.mean(1)
+out = self.classifier(hs)
+logits['ori_out'] = out  # Bug: Nên là logits['ori_out'] = out
+return logits
+```
+- Nếu không dùng FPN/Selector/Combiner, dùng backbone nguyên bản để dự đoán.
+
+#### **Dễ hiểu với Python**
+- Đây là hàm chính nhận ảnh, chạy qua các bước (backbone → FPN → Selector → Combiner), và trả về kết quả dự đoán.
+
+---
+
+### **Tổng kết**
+- **`FPN_UP`**: Rút gọn đặc trưng từ thấp lên cao.
+- **`PluginMoodel`**: Kết hợp tất cả thành một mô hình hoàn chỉnh.
+
+Nếu bạn muốn tôi giải thích thêm bất kỳ phần nào hoặc chạy thử code, hãy cho tôi biết nhé!
