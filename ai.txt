@@ -682,3 +682,234 @@ return logits
 - **`PluginMoodel`**: Kết hợp tất cả thành một mô hình hoàn chỉnh.
 
 Nếu bạn muốn tôi giải thích thêm bất kỳ phần nào hoặc chạy thử code, hãy cho tôi biết nhé!
+
+Được rồi, tôi sẽ tập trung giải thích chi tiết từng dòng (hoặc cụm) code trong file `pim_module.py` có liên quan đến Machine Learning (ML) hoặc Fine-Grained Visual Classification (FGVC), bỏ qua những dòng cơ bản của Python như vòng lặp, gán biến đơn giản, hoặc gọi hàm thông thường. Tôi sẽ giải thích ý nghĩa của chúng trong ngữ cảnh ML/FGVC, nhưng vẫn giữ cách diễn đạt dễ hiểu cho người không có nền tảng về lĩnh vực này. Vì file khá dài, tôi sẽ tiếp tục từ các lớp trước và đi qua từng phần như bạn yêu cầu.
+
+---
+
+### **1. `GCNCombiner`**
+#### **Khởi tạo (`__init__`)**
+```python
+assert inputs is not None or fpn_size is not None, \
+    "To build GCN combiner, you must give one features dimension."
+```
+- **Ý nghĩa ML/FGVC**: Trong ML, các mô hình cần biết kích thước của dữ liệu đầu vào để xử lý chính xác. Ở đây, `inputs` là các đặc trưng (features) từ backbone, còn `fpn_size` là kích thước từ FPN (Feature Pyramid Network). Nếu không có cả hai, mô hình không thể xác định cách xử lý dữ liệu, dẫn đến lỗi. Điều này quan trọng trong FGVC vì các đặc trưng cần được chuẩn hóa để phân biệt các chi tiết nhỏ giữa các lớp (class).
+
+```python
+if fpn_size is None:
+    for name in inputs:
+        if len(name) == 4:
+            in_size = inputs[name].size(1)
+        elif len(name) == 3:
+            in_size = inputs[name].size(2)
+        else:
+            raise ValueError("The size of output dimension of previous must be 3 or 4.")
+        m = nn.Sequential(
+            nn.Linear(in_size, proj_size),
+            nn.ReLU(),
+            nn.Linear(proj_size, proj_size)
+        )
+        self.add_module("proj_"+name, m)
+```
+- **Ý nghĩa ML/FGVC**: 
+  - **`inputs[name].size(1)` hoặc `.size(2)`**: Lấy kích thước kênh (channels) từ tensor đặc trưng. Trong ML, đặc trưng thường là mảng đa chiều (3D: batch, không gian, kênh; hoặc 4D: batch, kênh, chiều cao, chiều rộng). Đây là dữ liệu thô từ backbone (mô hình nền) như ResNet.
+  - **`nn.Sequential(...)`**: Tạo một chuỗi tầng để "chiếu" (project) đặc trưng về cùng kích thước `proj_size`. Trong FGVC, điều này cần thiết vì các tầng khác nhau của backbone cho ra đặc trưng với kích thước khác nhau, và chúng cần được chuẩn hóa để kết hợp.
+  - **`nn.Linear(in_size, proj_size)`**: Một tầng tuyến tính (fully connected layer) biến đổi số kênh từ `in_size` sang `proj_size`. Đây là bước học cách "nén" hoặc "mở rộng" thông tin để phù hợp với bước sau.
+  - **`nn.ReLU()`**: Hàm kích hoạt phi tuyến tính, giúp mô hình học các mẫu phức tạp hơn (trong FGVC, như phân biệt cánh hoa hay lá cây).
+  - **`nn.Linear(proj_size, proj_size)`**: Tinh chỉnh thêm đặc trưng, tăng khả năng học chi tiết.
+
+```python
+num_joints = total_num_selects // 64
+self.param_pool0 = nn.Linear(total_num_selects, num_joints)
+```
+- **Ý nghĩa ML/FGVC**: 
+  - **`num_joints`**: Giảm số đặc trưng từ `total_num_selects` (tổng số đặc trưng được chọn) xuống một số nhỏ hơn (chia cho 64). Trong FGVC, điều này giúp giảm độ phức tạp tính toán mà vẫn giữ thông tin quan trọng.
+  - **`nn.Linear(total_num_selects, num_joints)`**: Tầng tuyến tính "tổng hợp" (pooling) đặc trưng. Trong ML, pooling là cách giảm kích thước dữ liệu nhưng vẫn giữ ý nghĩa, giống như chọn các đặc điểm nổi bật của một đối tượng (ví dụ: hình dạng lá thay vì toàn bộ ảnh).
+
+```python
+A = torch.eye(num_joints) / 100 + 1 / 100
+self.adj1 = nn.Parameter(copy.deepcopy(A))
+self.conv1 = nn.Conv1d(self.proj_size, self.proj_size, 1)
+self.batch_norm1 = nn.BatchNorm1d(self.proj_size)
+self.conv_q1 = nn.Conv1d(self.proj_size, self.proj_size//4, 1)
+self.conv_k1 = nn.Conv1d(self.proj_size, self.proj_size//4, 1)
+self.alpha1 = nn.Parameter(torch.zeros(1))
+```
+- **Ý nghĩa ML/FGVC**: 
+  - **`torch.eye(num_joints) / 100 + 1 / 100`**: Tạo ma trận đơn vị (identity matrix) và chia nhỏ giá trị. Đây là ma trận adjacency khởi tạo cho Graph Convolutional Network (GCN), biểu thị mối quan hệ giữa các đặc trưng. Trong FGVC, GCN giúp mô hình hiểu mối liên hệ giữa các phần của ảnh (như giữa hoa và lá).
+  - **`self.adj1 = nn.Parameter(...)`**: Biến ma trận này thành tham số học được, nghĩa là mô hình sẽ tự điều chỉnh mối quan hệ trong quá trình huấn luyện.
+  - **`nn.Conv1d(self.proj_size, self.proj_size, 1)`**: Tầng tích chập 1D giữ nguyên kích thước, dùng để xử lý đặc trưng theo kiểu đồ thị. Trong FGVC, nó giúp tăng cường thông tin cục bộ.
+  - **`nn.BatchNorm1d(self.proj_size)`**: Chuẩn hóa dữ liệu giữa các batch, giúp mô hình học ổn định hơn (tránh bị lệch do dữ liệu đầu vào khác nhau).
+  - **`self.conv_q1`, `self.conv_k1`**: Hai tầng tích chập giảm kích thước xuống 1/4, dùng để tính ma trận adjacency động (giống cơ chế attention trong ML). Trong FGVC, điều này giúp tập trung vào các vùng quan trọng của ảnh.
+  - **`self.alpha1`**: Tham số điều chỉnh mức độ ảnh hưởng của ma trận động, giúp mô hình linh hoạt hơn.
+
+```python
+self.param_pool1 = nn.Linear(num_joints, 1)
+self.dropout = nn.Dropout(p=0.1)
+self.classifier = nn.Linear(self.proj_size, num_classes)
+self.tanh = nn.Tanh()
+```
+- **Ý nghĩa ML/FGVC**: 
+  - **`nn.Linear(num_joints, 1)`**: Tổng hợp tất cả đặc trưng thành một giá trị duy nhất, giống như "gom" thông tin để chuẩn bị dự đoán.
+  - **`nn.Dropout(p=0.1)`**: Ngẫu nhiên bỏ 10% dữ liệu trong quá trình huấn luyện để tránh overfitting (học quá khớp với dữ liệu huấn luyện), rất quan trọng trong FGVC vì dữ liệu thường phức tạp.
+  - **`nn.Linear(self.proj_size, num_classes)`**: Tầng phân loại cuối cùng, ánh xạ đặc trưng thành xác suất cho từng lớp. Trong FGVC, đây là bước quyết định xem ảnh thuộc loại cây nào.
+  - **`nn.Tanh()`**: Hàm kích hoạt giới hạn giá trị từ -1 đến 1, dùng để tính ma trận adjacency động.
+
+#### **Xử lý dữ liệu (`forward`)**
+```python
+if self.fpn_size is None:
+    _tmp = getattr(self, "proj_"+name)(x[name])
+else:
+    _tmp = x[name]
+hs.append(_tmp)
+```
+- **Ý nghĩa ML/FGVC**: 
+  - Nếu không dùng FPN, áp dụng tầng projection để chuẩn hóa đặc trưng từ `x[name]`. Trong FGVC, điều này đảm bảo các đặc trưng từ các tầng khác nhau có thể kết hợp được.
+
+```python
+hs = torch.cat(hs, dim=1).transpose(1, 2).contiguous()
+hs = self.param_pool0(hs)
+```
+- **Ý nghĩa ML/FGVC**: 
+  - **`torch.cat(hs, dim=1)`**: Ghép tất cả đặc trưng thành một tensor lớn. Trong ML, đây là bước chuẩn bị để xử lý đồng thời nhiều nguồn thông tin.
+  - **`.transpose(1, 2)`**: Chuyển đổi chiều để phù hợp với GCN (từ [B, S', C] thành [B, C, S']). Trong FGVC, điều này giúp mô hình xử lý đặc trưng theo kiểu đồ thị.
+  - **`self.param_pool0(hs)`**: Giảm số đặc trưng xuống `num_joints`, giống như chọn các đặc điểm chính của ảnh.
+
+```python
+q1 = self.conv_q1(hs).mean(1)
+k1 = self.conv_k1(hs).mean(1)
+A1 = self.tanh(q1.unsqueeze(-1) - k1.unsqueeze(1))
+A1 = self.adj1 + A1 * self.alpha1
+```
+- **Ý nghĩa ML/FGVC**: 
+  - **`self.conv_q1(hs).mean(1)`**: Tính vector "query" bằng tích chập và lấy trung bình, biểu thị thông tin tổng quát của đặc trưng.
+  - **`self.conv_k1(hs).mean(1)`**: Tính vector "key", tương tự.
+  - **`q1.unsqueeze(-1) - k1.unsqueeze(1)`**: Tính sự khác biệt giữa query và key để xác định mối quan hệ (giống cơ chế attention). Trong FGVC, điều này giúp tập trung vào các phần quan trọng của ảnh.
+  - **`self.tanh(...)`**: Chuẩn hóa giá trị để tạo ma trận adjacency động.
+  - **`A1 = self.adj1 + A1 * self.alpha1`**: Kết hợp ma trận tĩnh (`adj1`) và động, với `alpha1` điều chỉnh mức độ.
+
+```python
+hs = self.conv1(hs)
+hs = torch.matmul(hs, A1)
+hs = self.batch_norm1(hs)
+```
+- **Ý nghĩa ML/FGVC**: 
+  - **`self.conv1(hs)`**: Áp dụng tích chập để xử lý đặc trưng cục bộ.
+  - **`torch.matmul(hs, A1)`**: Nhân với ma trận adjacency, thực hiện phép tính GCN để kết hợp thông tin theo mối quan hệ. Trong FGVC, điều này giúp mô hình hiểu mối liên hệ giữa các phần của đối tượng.
+  - **`self.batch_norm1(hs)`**: Chuẩn hóa để ổn định quá trình học.
+
+```python
+hs = self.param_pool1(hs)
+hs = self.dropout(hs)
+hs = hs.flatten(1)
+hs = self.classifier(hs)
+```
+- **Ý nghĩa ML/FGVC**: 
+  - **`self.param_pool1(hs)`**: Tổng hợp thành một giá trị duy nhất.
+  - **`self.dropout(hs)`**: Ngăn overfitting.
+  - **`hs.flatten(1)`**: Làm phẳng tensor để chuẩn bị phân loại.
+  - **`self.classifier(hs)`**: Dự đoán lớp cuối cùng, kết quả chính của FGVC.
+
+---
+
+### **2. `WeaklySelector`**
+#### **Khởi tạo (`__init__`)**
+```python
+if self.fpn_size is None:
+    self.num_classes = num_classes
+    for name in inputs:
+        fs_size = inputs[name].size()
+        if len(fs_size) == 3:
+            in_size = fs_size[2]
+        elif len(fs_size) == 4:
+            in_size = fs_size[1]
+        m = nn.Linear(in_size, num_classes)
+        self.add_module("classifier_l_"+name, m)
+```
+- **Ý nghĩa ML/FGVC**: 
+  - Nếu không dùng FPN, tạo bộ phân loại cho từng tầng đặc trưng. Trong FGVC, điều này cho phép dự đoán sơ bộ trên từng phần của ảnh (ví dụ: dự đoán dựa trên lá, hoa riêng lẻ).
+  - **`nn.Linear(in_size, num_classes)`**: Tầng phân loại ánh xạ đặc trưng thành xác suất cho từng lớp.
+
+#### **Xử lý dữ liệu (`forward`)**
+```python
+if len(x[name].size()) == 4:
+    B, C, H, W = x[name].size()
+    x[name] = x[name].view(B, C, H*W).permute(0, 2, 1).contiguous()
+if self.fpn_size is None:
+    logits[name] = getattr(self, "classifier_l_"+name)(x[name])
+```
+- **Ý nghĩa ML/FGVC**: 
+  - **`x[name].view(B, C, H*W).permute(0, 2, 1)`**: Chuyển tensor 4D (ảnh) thành 3D (danh sách đặc trưng). Trong FGVC, điều này giúp xử lý từng điểm ảnh như một đặc trưng riêng lẻ.
+  - **`logits[name] = ...`**: Tính dự đoán sơ bộ (logits) nếu không dùng FPN, bước đầu tiên để chọn lọc đặc trưng quan trọng.
+
+```python
+probs = torch.softmax(logits[name], dim=-1)
+sum_probs = torch.softmax(logits[name].mean(1), dim=-1)
+```
+- **Ý nghĩa ML/FGVC**: 
+  - **`torch.softmax(...)`**: Chuyển logits thành xác suất (tổng bằng 1). Trong FGVC, xác suất giúp đánh giá mức độ chắc chắn của từng đặc trưng.
+  - **`logits[name].mean(1)`**: Lấy trung bình để có dự đoán tổng quát cho mỗi mẫu.
+
+```python
+_, max_ids = torch.max(sum_probs[bi], dim=-1)
+confs, ranks = torch.sort(probs[bi, :, max_ids], descending=True)
+sf = x[name][bi][ranks[:num_select]]
+nf = x[name][bi][ranks[num_select:]]
+```
+- **Ý nghĩa ML/FGVC**: 
+  - **`torch.max(...)`**: Tìm lớp có xác suất cao nhất, xác định mục tiêu chính (ví dụ: loại cây nào).
+  - **`torch.sort(...)`**: Sắp xếp xác suất để chọn đặc trưng quan trọng nhất. Trong FGVC, điều này giúp tập trung vào các vùng nổi bật (như hoa, lá).
+  - **`sf`, `nf`**: Chia đặc trưng thành "được chọn" (`sf`) và "bị bỏ" (`nf`), tối ưu hóa việc học các chi tiết quan trọng.
+
+---
+
+### **3. `FPN`**
+#### **Khởi tạo (`__init__`)**
+```python
+if proj_type == "Conv":
+    m = nn.Sequential(
+        nn.Conv2d(inputs[node_name].size(1), inputs[node_name].size(1), 1),
+        nn.ReLU(),
+        nn.Conv2d(inputs[node_name].size(1), fpn_size, 1)
+    )
+```
+- **Ý nghĩa ML/FGVC**: 
+  - **`nn.Conv2d(...)`**: Tầng tích chập 2D xử lý đặc trưng không gian (spatial features). Trong FGVC, nó giúp giữ thông tin cục bộ (như cạnh, góc) trước khi chuẩn hóa về `fpn_size`.
+
+#### **Xử lý dữ liệu (`forward`)**
+```python
+x[name] = getattr(self, "Proj_"+name)(x[name])
+x[x0_name] = self.upsample_add(x[x0_name], x[x1_name], x1_name)
+```
+- **Ý nghĩa ML/FGVC**: 
+  - **`Proj_*`**: Chuẩn hóa đặc trưng về cùng kích thước, cần thiết để kết hợp thông tin từ các tầng khác nhau.
+  - **`upsample_add`**: Nâng cấp độ phân giải của tầng cao hơn (`x1_name`) để kết hợp với tầng thấp hơn (`x0_name`). Trong FGVC, điều này giúp mô hình hiểu cả chi tiết nhỏ và tổng thể lớn.
+
+---
+
+### **4. `FPN_UP`**
+#### **Xử lý dữ liệu (`forward`)**
+```python
+x[x1_name] = self.downsample_add(x[x0_name], x[x1_name], x0_name)
+```
+- **Ý nghĩa ML/FGVC**: Ngược với FPN, giảm độ chi tiết của tầng thấp để kết hợp với tầng cao, tạo sự cân bằng giữa thông tin chi tiết và tổng quát.
+
+---
+
+### **5. `PluginMoodel`**
+#### **Khởi tạo (`__init__`)**
+```python
+self.backbone = create_feature_extractor(backbone, return_nodes=return_nodes)
+```
+- **Ý nghĩa ML/FGVC**: Backbone (như ResNet) trích xuất đặc trưng từ ảnh. Trong FGVC, nó giúp phát hiện các đặc điểm như màu sắc, hình dạng của đối tượng.
+
+```python
+if self.use_combiner:
+    total_num_selects = sum([num_selects[name] for name in num_selects])
+    self.combiner = GCNCombiner(total_num_selects, num_classes, gcn_inputs, gcn_proj_size, self.fpn_size)
+```
+- **Ý nghĩa ML/FGVC**: Kết hợp tất cả đặc trưng đã chọn để đưa ra dự đoán cuối cùng, tối ưu hóa cho FGVC bằng cách dùng GCN.
+
+---
+
+Nếu bạn muốn tôi đi sâu hơn vào bất kỳ phần nào, hãy cho tôi biết nhé!
