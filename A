@@ -1,0 +1,40 @@
+1. Cơ bản và cú pháp
+•  Viết chương trình nhập/xuất: Tạo chương trình nhập tên, tuổi và in ra định dạng đẹp (dùng cin, cout).
+•  Chuyển đổi Python sang C++: Chuyển một đoạn code Python đơn giản (vòng lặp, điều kiện) sang C++.
+•  Quản lý bộ nhớ: Viết hàm cấp phát/thu hồi bộ nhớ động dùng new và delete.
+2. Cấu trúc điều khiển
+•  Tính toán đơn giản: Viết chương trình tính giai thừa, số Fibonacci (dùng vòng lặp và đệ quy).
+•  Menu console: Tạo menu tương tác (dùng switch-case) để chọn các chức năng như tính toán, sắp xếp.
+•  Xử lý chuỗi: Viết hàm đếm số từ, đảo chuỗi, hoặc kiểm tra palindrome (dùng string).
+3. Mảng và con trỏ
+•  Mảng 1D: Viết chương trình sắp xếp mảng (bubble sort, quick sort) và tìm kiếm (tuyến tính, nhị phân).
+•  Mảng 2D: Tạo ma trận, tính tổng, tìm phần tử lớn nhất/nhỏ nhất.
+•  Con trỏ: Viết hàm hoán đổi 2 số dùng con trỏ, hoặc duyệt mảng qua con trỏ.
+4. Hàm và đệ quy
+•  Hàm cơ bản: Viết hàm tính toán (bình phương, lũy thừa) với tham số truyền tham chiếu (&).
+•  Đệ quy: Cài đặt đệ quy cho bài toán tháp Hà Nội hoặc tính tổ hợp C(n,k).
+•  Overloading: Tạo nhiều hàm cùng tên nhưng khác tham số (ví dụ: tính diện tích hình học).
+5. Lập trình hướng đối tượng (OOP)
+•  Lớp cơ bản: Tạo lớp SinhVien với thuộc tính (tên, điểm) và phương thức (tính GPA, in thông tin).
+•  Kế thừa: Tạo lớp HinhHoc và các lớp con (HinhTron, HinhChuNhat) để tính chu vi, diện tích.
+•  Đa hình: Sử dụng hàm ảo (virtual) để quản lý danh sách đối tượng (ví dụ: danh sách nhân viên).
+6. Cấu trúc dữ liệu cơ bản
+•  Danh sách liên kết: Cài đặt danh sách liên kết đơn (thêm, xóa, tìm kiếm).
+•  Stack/Queue: Viết chương trình mô phỏng stack hoặc queue dùng mảng hoặc danh sách liên kết.
+•  Cây nhị phân: Tạo cây nhị phân tìm kiếm (BST) và các thao tác chèn, xóa, duyệt cây.
+7. Xử lý file
+•  Đọc/ghi file: Viết chương trình đọc file văn bản, đếm số dòng, hoặc lưu danh sách sinh viên vào file.
+•  File nhị phân: Lưu và đọc danh sách đối tượng (ví dụ: SinhVien) vào file nhị phân.
+•  CSV parser: Tạo chương trình đọc file CSV và hiển thị dữ liệu dạng bảng.
+8. Thuật toán và tối ưu
+•  Sắp xếp: Cài đặt các thuật toán sắp xếp (merge sort, heap sort) và so sánh thời gian chạy.
+•  Tìm kiếm: Cài đặt thuật toán tìm kiếm (BFS, DFS) trên đồ thị đơn giản.
+•  Tối ưu bộ nhớ: Viết chương trình xử lý dữ liệu lớn với con trỏ và tham chiếu để giảm chi phí bộ nhớ.
+9. Dự án nhỏ thực tế
+•  Quản lý thư viện: Tạo hệ thống quản lý sách (thêm, xóa, tìm kiếm) dùng OOP và file.
+•  Trò chơi đơn giản: Viết game đoán số, tic-tac-toe hoặc rắn săn mồi trên console.
+•  Máy tính bỏ túi: Tạo máy tính hỗ trợ các phép toán cơ bản, lưu lịch sử vào file.
+10. Chuyển từ Python sang C++
+•  So sánh tốc độ: Chuyển một chương trình Python (ví dụ: tính Fibonacci) sang C++ và đo thời gian chạy.
+•  Thư viện chuẩn: Thay thế các thư viện Python (như numpy, pandas) bằng C++ STL (vector, map, algorithm).
+•  Xử lý chuỗi nâng cao: Viết hàm xử lý chuỗi tương tự Python (split, join) dùng C++ STL.
