@@ -1,0 +1,112 @@
+Để cài đặt Docker và thiết lập một ROS 2 workspace (ros2_ws) trong một container Docker trên NVIDIA Jetson mới, bạn cần thực hiện các bước cụ thể sau. Tôi sẽ hướng dẫn chi tiết, đảm bảo phù hợp với kiến trúc ARM64 của Jetson (thường là Ubuntu 20.04 hoặc 22.04 với NVIDIA JetPack). Các bước dưới đây giả định bạn đang sử dụng Ubuntu 20.04 (Focal Fossa) hoặc 22.04 (Jammy Jellyfish) được cài sẵn với JetPack.
+
+1. Chuẩn bị môi trường trên Jetson
+Trước khi cài Docker và ROS 2, hãy đảm bảo hệ thống Jetson đã sẵn sàng:
+	•	Cập nhật hệ thống: sudo apt update && sudo apt upgrade -y
+	•	
+	•	Cài đặt các công cụ cần thiết: sudo apt install -y curl gnupg2 ca-certificates lsb-release software-properties-common
+	•	
+	•	Kiểm tra phiên bản Ubuntu: lsb_release -a
+	•	 Ghi lại phiên bản (ví dụ: 20.04 hoặc 22.04) để sử dụng trong các bước cài đặt.
+	•	Kiểm tra kiến trúc: uname -m
+	•	 Đảm bảo kết quả là aarch64 (ARM64), phù hợp với Jetson.
+
+2. Cài đặt Docker trên Jetson
+Docker không được cài sẵn trên Jetson, nhưng NVIDIA cung cấp hướng dẫn cài đặt Docker tương thích với JetPack. Dưới đây là các bước cài Docker Engine:
+Bước 2.1: Thêm kho lưu trữ Docker
+	1	Thêm khóa GPG chính thức của Docker: curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+	2	
+	3	Thêm kho lưu trữ Docker vào hệ thống: echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+	4	
+Bước 2.2: Cài đặt Docker Engine
+	1	Cập nhật danh sách gói: sudo apt update
+	2	
+	3	Cài đặt Docker Engine và các công cụ liên quan: sudo apt install -y docker-ce docker-ce-cli containerd.io
+	4	
+	5	Kiểm tra trạng thái Docker: sudo systemctl status docker
+	6	 Nếu Docker đang chạy, bạn sẽ thấy trạng thái active (running).
+Bước 2.3: Cấu hình quyền người dùng
+Để chạy lệnh docker mà không cần sudo, thêm người dùng hiện tại vào nhóm docker:
+sudo usermod -aG docker $USER
+Đăng xuất và đăng nhập lại để áp dụng:
+exit
+Sau đó, kiểm tra Docker bằng lệnh:
+docker --version
+Nếu cài đặt thành công, bạn sẽ thấy phiên bản Docker (ví dụ: Docker version 24.0.7).
+Bước 2.4: Kích hoạt NVIDIA Container Runtime
+Jetson yêu cầu NVIDIA Container Runtime để sử dụng GPU trong Docker:
+	1	Cài đặt nvidia-docker2: sudo apt install -y nvidia-docker2
+	2	
+	3	Khởi động lại Docker: sudo systemctl restart docker
+	4	
+	5	Kiểm tra NVIDIA runtime: docker run --gpus all nvidia/cuda:11.4-base-ubuntu20.04 nvidia-smi
+	6	 Nếu thành công, bạn sẽ thấy đầu ra của nvidia-smi hiển thị thông tin GPU của Jetson.
+
+3. Thiết lập ROS 2 trong Docker
+Thay vì cài ROS 2 trực tiếp trên Jetson, bạn sẽ chạy ROS 2 trong một container Docker để đảm bảo môi trường sạch và dễ quản lý. ROS 2 Humble (cho Ubuntu 22.04) hoặc Foxy (cho Ubuntu 20.04) là các phiên bản phổ biến.
+Bước 3.1: Tìm image ROS 2 phù hợp
+ROS cung cấp các image Docker chính thức trên Docker Hub. Tùy thuộc vào phiên bản Ubuntu trên Jetson:
+	•	Ubuntu 20.04: Sử dụng osrf/ros:foxy-desktop.
+	•	Ubuntu 22.04: Sử dụng osrf/ros:humble-desktop.
+Kiểm tra image có sẵn:
+docker pull osrf/ros:foxy-desktop
+hoặc
+docker pull osrf/ros:humble-desktop
+Bước 3.2: Chạy container ROS 2
+	1	Tạo container với quyền truy cập GPU, màn hình (cho GUI như RViz), và chia sẻ thư mục workspace: docker run -it --name ros2_container \
+	2	  --gpus all \
+	3	  --env DISPLAY=$DISPLAY \
+	4	  --volume /tmp/.X11-unix:/tmp/.X11-unix \
+	5	  --volume $HOME/ros2_ws:/root/ros2_ws \
+	6	  --network host \
+	7	  osrf/ros:foxy-desktop
+	8	 Giải thích:
+	◦	--gpus all: Cho phép container sử dụng GPU của Jetson.
+	◦	--env DISPLAY và --volume /tmp/.X11-unix: Hỗ trợ GUI (như RViz, Gazebo).
+	◦	--volume $HOME/ros2_ws:/root/ros2_ws: Ánh xạ thư mục workspace trên host vào container.
+	◦	--network host: Cho phép container sử dụng mạng của host, cần thiết cho ROS 2.
+	9	Trong container, kiểm tra ROS 2: source /opt/ros/foxy/setup.bash
+	10	ros2 --version
+	11	 Nếu thành công, bạn sẽ thấy phiên bản ROS 2 (ví dụ: foxy).
+Bước 3.3: Tạo ROS 2 Workspace trong Container
+	1	Trong container, tạo thư mục workspace: mkdir -p /root/ros2_ws/src
+	2	cd /root/ros2_ws
+	3	
+	4	Cài đặt công cụ colcon (nếu chưa có): apt update && apt install -y python3-colcon-common-extensions
+	5	
+	6	Tạo một gói ROS 2 ví dụ: cd src
+	7	ros2 pkg create --build-type ament_cmake my_package
+	8	
+	9	Build workspace: cd /root/ros2_ws
+	10	source /opt/ros/foxy/setup.bash
+	11	colcon build
+	12	
+	13	Source workspace: source install/setup.bash
+	14	
+	15	Kiểm tra bằng cách chạy một node ví dụ: ros2 run demo_nodes_cpp talker
+	16	 Mở một terminal khác trong container (hoặc chạy container mới) và chạy: ros2 run demo_nodes_cpp listener
+	17	 Nếu thấy thông điệp giao tiếp giữa talker và listener, workspace đã hoạt động.
+
+4. Lưu và quản lý container
+	•	Lưu trạng thái container: Để không mất dữ liệu khi container dừng: docker commit ros2_container my_ros2_image
+	•	 Sau này, bạn có thể chạy lại: docker run -it --gpus all --env DISPLAY=$DISPLAY --volume /tmp/.X11-unix:/tmp/.X11-unix --volume $HOME/ros2_ws:/root/ros2_ws --network host my_ros2_image
+	•	
+	•	Dừng và khởi động lại container: docker stop ros2_container
+	•	docker start -i ros2_container
+	•	
+
+5. Lưu ý và khắc phục sự cố
+	•	GUI không hoạt động: Nếu RViz hoặc Gazebo không hiển thị, đảm bảo đã cài X11 trên host: sudo apt install -y x11-apps
+	•	xhost +local:docker
+	•	
+	•	Hiệu suất GPU: Đảm bảo NVIDIA Container Runtime được cấu hình đúng. Nếu nvidia-smi trong container không hoạt động, kiểm tra lại bước 2.4.
+	•	Không gian lưu trữ: Jetson thường có dung lượng hạn chế. Xóa image/container không dùng: docker system prune -a
+	•	
+	•	Phiên bản ROS 2: Nếu cần phiên bản khác (ví dụ: Galactic, Humble), thay foxy bằng phiên bản tương ứng trong docker pull.
+
+6. Tài liệu tham khảo
+	•	Cài đặt Docker trên Ubuntu: https://docs.docker.com/engine/install/ubuntu/
+	•	ROS 2 Docker: https://docs.ros.org/en/foxy/How-To-Guides/Running-ROS-2-in-Docker.html
+	•	NVIDIA Jetson Docker: https://docs.nvidia.com/jetson/jetpack/docker/
+
+Nếu bạn gặp lỗi cụ thể hoặc cần hướng dẫn thêm (ví dụ: tích hợp Gazebo, RViz, hoặc package ROS 2 cụ thể), hãy cho tôi biết chi tiết để tôi hỗ trợ!
