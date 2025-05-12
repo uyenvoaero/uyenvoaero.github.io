@@ -1,0 +1,134 @@
+Để chuyển hoặc tạo một container Docker chứa ROS 2 Humble từ Jetson cũ (Ubuntu 22.04, JetPack 4.5) sang Jetson mới (Ubuntu 20.04, JetPack 4.1), bạn cần thực hiện các bước sau. Vì JetPack 4.1 sử dụng Ubuntu 20.04, việc cài đặt và chạy ROS 2 Humble trong Docker trên Jetson mới cần được thực hiện cẩn thận do ROS 2 Humble chính thức hỗ trợ Ubuntu 22.04, nhưng có thể chạy trên Ubuntu 20.04 với một số điều chỉnh. Dưới đây là hướng dẫn chi tiết:
+
+1. Chuẩn bị trên Jetson cũ
+Trên Jetson cũ, bạn cần xuất container Docker chứa ROS 2 Humble và các dữ liệu liên quan để chuyển sang Jetson mới.
+Bước 1: Kiểm tra container đang chạy
+	•	Chạy lệnh để liệt kê các container đang chạy: docker ps
+	•	 hoặc tất cả container (bao gồm cả container đã dừng): docker ps -a
+	•	
+	•	Ghi lại tên hoặc ID của container chứa ROS 2 Humble.
+Bước 2: Xuất container thành image
+	•	Commit container thành một image Docker: docker commit  ros2_humble_image
+	•	 Thay bằng tên hoặc ID của container.
+	•	Kiểm tra image vừa tạo: docker images
+	•	 Bạn sẽ thấy image ros2_humble_image.
+Bước 3: Lưu image thành file tar
+	•	Lưu image thành file .tar để chuyển sang Jetson mới: docker save -o ros2_humble_image.tar ros2_humble_image
+	•	
+	•	File ros2_humble_image.tar sẽ được tạo trong thư mục hiện tại.
+Bước 4: Chuyển file tar sang Jetson mới
+	•	Sử dụng scp, USB, hoặc bất kỳ phương pháp nào để chuyển file ros2_humble_image.tar sang Jetson mới. Ví dụ, dùng scp: scp ros2_humble_image.tar user@:/home/user/
+	•	 Thay user và bằng thông tin tương ứng.
+Bước 5 (Tùy chọn): Sao lưu dữ liệu liên quan
+	•	Nếu container có dữ liệu quan trọng (ví dụ: workspace ROS, file cấu hình) được lưu trong volume hoặc thư mục bind-mount, hãy sao lưu chúng:
+	◦	Kiểm tra volume hoặc bind-mount: docker inspect 
+	◦	 Tìm phần Mounts để xem dữ liệu được lưu ở đâu.
+	◦	Sao chép các thư mục liên quan (ví dụ: /home/user/ros2_ws) sang Jetson mới: scp -r /path/to/ros2_ws user@:/home/user/
+	◦	
+
+2. Chuẩn bị trên Jetson mới
+Trên Jetson mới (Ubuntu 20.04, JetPack 4.1), bạn cần cài đặt Docker, nhập image, và chạy container. Tuy nhiên, do ROS 2 Humble không chính thức hỗ trợ Ubuntu 20.04, bạn có thể cần xây dựng lại image hoặc điều chỉnh container.
+Bước 1: Cài đặt Docker
+	•	Cài đặt Docker trên Jetson mới nếu chưa có: sudo apt update
+	•	sudo apt install -y docker.io
+	•	sudo usermod -aG docker $USER
+	•	
+	•	Đăng xuất và đăng nhập lại để cập nhật quyền.
+	•	Kiểm tra Docker: docker --version
+	•	
+Bước 2: Nhập image Docker
+	•	Chuyển file ros2_humble_image.tar vào Jetson mới (đã thực hiện ở bước 4 trên Jetson cũ).
+	•	Nhập image từ file tar: docker load -i ros2_humble_image.tar
+	•	
+	•	Kiểm tra image: docker images
+	•	 Bạn sẽ thấy image ros2_humble_image.
+Bước 3: Chạy container
+	•	Chạy container từ image: docker run -it --name ros2_humble_container --network host -v /home/user/ros2_ws:/ros2_ws ros2_humble_image bash
+	•	
+	◦	--name ros2_humble_container: Đặt tên container.
+	◦	--network host: Dùng mạng host để ROS 2 giao tiếp dễ dàng.
+	◦	-v /home/user/ros2_ws:/ros2_ws: Map thư mục workspace ROS từ Jetson mới vào container (nếu bạn đã sao chép dữ liệu từ Jetson cũ).
+	◦	bash: Mở shell trong container.
+Bước 4: Kiểm tra ROS 2 Humble
+	•	Trong container, kiểm tra ROS 2: source /opt/ros/humble/setup.bash
+	•	ros2 --version
+	•	
+	•	Nếu ROS 2 hoạt động, bạn có thể tiếp tục sử dụng container.
+
+3. Xử lý vấn đề tương thích (nếu có)
+Vì ROS 2 Humble được thiết kế cho Ubuntu 22.04, có thể gặp lỗi khi chạy trên Ubuntu 20.04 do sự khác biệt về thư viện hệ thống (glibc, Python, v.v.). Nếu container không chạy được, bạn cần xây dựng lại image ROS 2 Humble cho Ubuntu 20.04.
+Bước 1: Tạo Dockerfile cho ROS 2 Humble trên Ubuntu 20.04
+Tạo file Dockerfile với nội dung sau:
+FROM arm64v8/ubuntu:20.04
+
+# Cài đặt các công cụ cần thiết
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y \
+    locales \
+    curl \
+    gnupg2 \
+    lsb-release \
+    && rm -rf /var/lib/apt/lists/*
+
+# Thiết lập locale
+RUN locale-gen en_US en_US.UTF-8 && update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+ENV LANG=en_US.UTF-8
+
+# Thêm key và source list của ROS 2
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+RUN echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu focal main" > /etc/apt/sources.list.d/ros2.list
+
+# Cài đặt ROS 2 Humble
+RUN apt-get update && apt-get install -y \
+    ros-humble-ros-base \
+    python3-colcon-common-extensions \
+    python3-rosdep \
+    && rm -rf /var/lib/apt/lists/*
+
+# Khởi tạo rosdep
+RUN rosdep init && rosdep update
+
+# Thiết lập entrypoint
+COPY ros_entrypoint.sh /ros_entrypoint.sh
+RUN chmod +x /ros_entrypoint.sh
+ENTRYPOINT ["/ros_entrypoint.sh"]
+CMD ["bash"]
+Tạo file ros_entrypoint.sh:
+#!/bin/bash
+source /opt/ros/humble/setup.bash
+exec "$@"
+Bước 2: Build image
+	•	Đặt Dockerfile và ros_entrypoint.sh trong cùng thư mục, sau đó build: docker build -t ros2_humble_image_new .
+	•	
+Bước 3: Chạy container mới
+	•	Chạy container từ image mới: docker run -it --name ros2_humble_container_new --network host -v /home/user/ros2_ws:/ros2_ws ros2_humble_image_new bash
+	•	
+	•	Sao chép dữ liệu từ Jetson cũ (nếu có) vào /home/user/ros2_ws trên Jetson mới.
+Bước 4: Cài đặt thêm các gói ROS 2 (nếu cần)
+	•	Nếu workspace ROS 2 cũ yêu cầu các gói bổ sung, cài đặt chúng trong container: apt update
+	•	rosdep install --from-paths /ros2_ws --ignore-src -r -y
+	•	
+	•	Build workspace: cd /ros2_ws
+	•	colcon build
+	•	
+
+4. Lưu ý quan trọng
+	•	Tương thích JetPack: JetPack 4.1 có thể yêu cầu các thư viện NVIDIA cụ thể. Đảm bảo container có quyền truy cập vào GPU (nếu cần) bằng cách thêm: --gpus all -v /usr/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu
+	•	 khi chạy docker run.
+	•	Kiểm tra không gian lưu trữ: Jetson thường có dung lượng hạn chế. Kiểm tra dung lượng trước khi build hoặc nhập image: df -h
+	•	
+	•	Mạng ROS 2: Nếu sử dụng nhiều node ROS 2, đảm bảo cấu hình ROS_DOMAIN_ID và các biến môi trường khác trong container: export ROS_DOMAIN_ID=0
+	•	
+	•	Sao lưu thường xuyên: Sau khi thiết lập container trên Jetson mới, lưu image lại: docker save -o ros2_humble_image_new.tar ros2_humble_image_new
+	•	
+
+5. Kiểm tra cuối cùng
+	•	Chạy một node ROS 2 để kiểm tra: source /opt/ros/humble/setup.bash
+	•	ros2 run demo_nodes_cpp talker
+	•	
+	•	Mở terminal khác trong container và chạy: source /opt/ros/humble/setup.bash
+	•	ros2 run demo_nodes_cpp listener
+	•	
+	•	Nếu thấy giao tiếp giữa talker và listener, container đã hoạt động đúng.
+
+Nếu bạn gặp lỗi cụ thể trong quá trình thực hiện, hãy cung cấp chi tiết để tôi hỗ trợ thêm!
