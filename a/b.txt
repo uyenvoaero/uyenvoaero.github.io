@@ -1,138 +1,0 @@
-Chuẩn bị trước khi bắt đầu
-	1	Kiểm tra phần cứng và hệ điều hành trên Jetson mới:
-	◦	Jetson mới cần được cài đặt JetPack (phiên bản mới nhất được khuyến nghị, ví dụ JetPack 5.1 hoặc cao hơn).
-	◦	Jetson mới phải chạy Ubuntu (thường là 20.04 với JetPack 5.x). ROS 2 Humble yêu cầu Ubuntu 22.04, nhưng bạn có thể sử dụng Docker để khắc phục sự khác biệt này.
-	◦	Đảm bảo Jetson mới có kết nối internet và đủ dung lượng lưu trữ.
-	2	Kiểm tra Jetson cũ:
-	◦	Xác định phiên bản JetPack và Ubuntu trên Jetson cũ.
-	◦	Kiểm tra Docker image/container của ROS 2 Humble trên Jetson cũ.
-	◦	Xác định các dữ liệu liên quan cần chuyển: workspace ROS 2, package, mã nguồn, tệp cấu hình, và dữ liệu khác.
-	3	Yêu cầu phần mềm:
-	◦	Cài đặt Docker trên Jetson mới nếu chưa có.
-	◦	Đảm bảo NVIDIA Container Toolkit được cài đặt để hỗ trợ GPU trong Docker.
-	4	Sao lưu dữ liệu từ Jetson cũ:
-	◦	Sao lưu workspace ROS 2 (thường nằm trong thư mục ~/ros2_ws).
-	◦	Sao lưu các Docker image/container liên quan đến ROS 2 Humble.
-	◦	Lưu các tệp cấu hình, script, hoặc dữ liệu khác (nếu có).
-
-Các bước thực hiện
-Bước 1: Cài đặt môi trường cơ bản trên Jetson mới
-	1	Cài đặt Docker:
-	◦	Nếu Jetson mới chưa có Docker, chạy các lệnh sau để cài đặt: sudo apt update
-	◦	sudo apt install docker.io
-	◦	sudo systemctl start docker
-	◦	sudo systemctl enable docker
-	◦	
-	◦	Thêm người dùng hiện tại vào nhóm Docker để không cần sudo khi chạy lệnh Docker: sudo usermod -aG docker $USER
-	◦	newgrp docker
-	◦	
-	2	Cài đặt NVIDIA Container Toolkit:
-	◦	Để sử dụng GPU trong Docker, cài đặt NVIDIA Container Toolkit: distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-	◦	curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
-	◦	curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
-	◦	sudo apt update
-	◦	sudo apt install -y nvidia-docker2
-	◦	sudo systemctl restart docker
-	◦	
-	◦	Kiểm tra NVIDIA Container Toolkit: docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
-	◦	 Nếu thấy thông tin GPU, NVIDIA Container Toolkit đã hoạt động.
-	3	Cài đặt các công cụ bổ trợ (nếu cần):
-	◦	Cài đặt curl, git, và các công cụ khác: sudo apt install curl git
-	◦	
-
-Bước 2: Sao lưu và chuyển Docker image từ Jetson cũ
-	1	Xác định Docker image/container trên Jetson cũ:
-	◦	Kiểm tra danh sách các image: docker images
-	◦	 Tìm image chứa ROS 2 Humble (thường có tên như osrf/ros:humble-desktop hoặc tên tùy chỉnh).
-	◦	Nếu bạn đã tạo container từ image này, kiểm tra container: docker ps -a
-	◦	
-	2	Sao lưu Docker image:
-	◦	Lưu image thành file .tar: docker save -o ros2_humble_image.tar :
-	◦	 Ví dụ: docker save -o ros2_humble_image.tar osrf/ros:humble-desktop
-	◦	Sao chép file .tar sang Jetson mới (dùng USB, SCP, hoặc chia sẻ qua mạng): scp ros2_humble_image.tar user@jetson_new_ip:/home/user/
-	◦	
-	3	Khôi phục Docker image trên Jetson mới:
-	◦	Tải image từ file .tar: docker load -i ros2_humble_image.tar
-	◦	
-	◦	Kiểm tra xem image đã được tải: docker images
-	◦	
-
-Bước 3: Chuyển workspace ROS 2 và dữ liệu
-	1	Sao lưu workspace ROS 2 trên Jetson cũ:
-	◦	Giả sử workspace của bạn nằm ở ~/ros2_ws, nén thư mục này: tar -czvf ros2_ws_backup.tar.gz ~/ros2_ws
-	◦	
-	◦	Chuyển file ros2_ws_backup.tar.gz sang Jetson mới (dùng USB hoặc SCP).
-	2	Khôi phục workspace trên Jetson mới:
-	◦	Giải nén workspace: tar -xzvf ros2_ws_backup.tar.gz -C ~/
-	◦	
-	◦	Đảm bảo workspace nằm ở vị trí mong muốn (ví dụ: ~/ros2_ws).
-	3	Chuyển các dữ liệu khác:
-	◦	Nếu có các tệp cấu hình, script, hoặc dữ liệu khác (ví dụ: tệp URDF, mô hình Gazebo, hoặc dữ liệu cảm biến), sao chép chúng sang Jetson mới theo cách tương tự.
-
-Bước 4: Chạy ROS 2 Humble trong Docker trên Jetson mới
-	1	Tạo container từ Docker image:
-	◦	Chạy container với các tùy chọn cần thiết (hỗ trợ GPU, mount workspace, và X11 cho GUI): docker run -it --rm \
-	◦	  --gpus all \
-	◦	  --net=host \
-	◦	  -e DISPLAY=$DISPLAY \
-	◦	  -v /tmp/.X11-unix:/tmp/.X11-unix \
-	◦	  -v ~/ros2_ws:/root/ros2_ws \
-	◦	  : \
-	◦	  bash
-	◦	
-	▪	--gpus all: Hỗ trợ GPU.
-	▪	--net=host: Sử dụng mạng của host để ROS 2 giao tiếp.
-	▪	-v ~/ros2_ws:/root/ros2_ws: Mount workspace vào container.
-	▪	-e DISPLAY và -v /tmp/.X11-unix: Hỗ trợ GUI (ví dụ: RViz, Gazebo).
-	2	Cấu hình môi trường trong container:
-	◦	Source ROS 2 Humble: source /opt/ros/humble/setup.bash
-	◦	
-	◦	Source workspace (nếu có): source /root/ros2_ws/install/setup.bash
-	◦	
-	3	Xây dựng workspace (nếu cần):
-	◦	Nếu workspace chứa mã nguồn chưa được build, chạy: cd /root/ros2_ws
-	◦	colcon build
-	◦	source install/setup.bash
-	◦	
-	4	Kiểm tra ROS 2:
-	◦	Chạy một node thử nghiệm: ros2 run demo_nodes_cpp talker
-	◦	
-	◦	Mở terminal khác trong container và chạy: ros2 run demo_nodes_cpp listener
-	◦	 Nếu thấy thông điệp giao tiếp giữa talker và listener, ROS 2 đã hoạt động.
-
-Bước 5: Kiểm tra và tối ưu
-	1	Kiểm tra hiệu suất GPU:
-	◦	Đảm bảo các ứng dụng sử dụng CUDA (như OpenCV với CUDA) hoạt động trong container: docker run --rm --gpus all : nvidia-smi
-	◦	
-	2	Tùy chỉnh Docker image (nếu cần):
-	◦	Nếu bạn cần thêm package hoặc công cụ vào image, tạo Dockerfile mới dựa trên image hiện tại. Ví dụ: FROM osrf/ros:humble-desktop
-	◦	RUN apt update && apt install -y python3-pip
-	◦	RUN pip install numpy
-	◦	
-	◦	Build image mới: docker build -t my_ros2_humble .
-	◦	
-	3	Lưu ý về tương thích:
-	◦	Nếu Jetson mới dùng JetPack 5.x (Ubuntu 20.04), Docker là cách tốt nhất để chạy ROS 2 Humble (yêu cầu Ubuntu 22.04). Tuy nhiên, kiểm tra xem các thư viện CUDA trong image có tương thích với JetPack của Jetson mới không. Nếu không, có thể cần build ROS 2 từ nguồn trong container (xem Web ID: 15).
-	4	Tự động hóa:
-	◦	Tạo script để tự động chạy container với các tùy chọn: #!/bin/bash
-	◦	docker run -it --rm \
-	◦	  --gpus all \
-	◦	  --net=host \
-	◦	  -e DISPLAY=$DISPLAY \
-	◦	  -v /tmp/.X11-unix:/tmp/.X11-unix \
-	◦	  -v ~/ros2_ws:/root/ros2_ws \
-	◦	  osrf/ros:humble-desktop \
-	◦	  bash
-	◦	
-	◦	Lưu script (ví dụ: run_ros2.sh), cấp quyền thực thi: chmod +x run_ros2.sh
-	◦	
-
-Lưu ý và khắc phục sự cố
-	•	Vấn đề về GUI (RViz, Gazebo):
-	◦	Nếu RViz/Gazebo không hiển thị, chạy xhost +local:docker trên host trước khi khởi động container.
-	•	Tương thích CUDA:
-	◦	Nếu image không hỗ trợ CUDA của Jetson mới, sử dụng image từ NVIDIA (ví dụ: nvcr.io/nvidia/l4t-base) và cài ROS 2 từ nguồn Web ID: 13.
-	•	Hiệu suất:
-	◦	Docker có thể làm giảm hiệu suất nhẹ so với cài đặt trực tiếp. Nếu cần tối ưu, cân nhắc cài ROS 2 trực tiếp trên Jetson mới (nếu tương thích).
-	•	Sao lưu thường xuyên:
-	◦	Lưu Docker image và workspace định kỳ để tránh mất dữ liệu.
