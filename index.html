@@ -11,7 +11,7 @@
 </head>
 <body class="bg-gray-100 font-sans">
     <!-- Language Switcher -->
-    <div class="fixed top-4 right-4 z-20">
+    <div class="fixed top-16 md:top-4 right-4 z-20">
         <button id="lang-toggle" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
             <span data-en="日本語" data-ja="English">日本語</span>
         </button>
@@ -37,7 +37,7 @@
         <!-- Left Sidebar -->
         <div class="md:w-1/4 bg-white p-6 rounded-lg shadow">
             <img src="assets/avatar.png" alt="Vo Uyen" class="w-1/2 rounded-full mb-4 mx-auto">
-            <h2 id="information" class="text-2xl font-semibold mb-4" data-en="Information" data-ja="情報">Information</h2>
+            <h2 id="information" class="text-2xl font-semibold mb-4 [scroll-margin-top:64px]" data-en="Information" data-ja="情報">Information</h2>
             <ul class="space-y-2">
                 <li><strong data-en="Full Name:" data-ja="氏名:">Full Name:</strong> <span data-en="Vo Thi Phuong Uyen" data-ja="ヴォ ティ フゥオン ウエン">Vo Thi Phuong Uyen</span></li>
                 <li><strong data-en="Job:" data-ja="職務:">Job:</strong> <span data-en="Computer Vision Engineer" data-ja="コンピュータビジョンエンジニア">Computer Vision Engineer</span></li>
@@ -56,9 +56,9 @@
 
         <!-- Right Content -->
         <div class="md:w-3/4 bg-white p-6 rounded-lg shadow">
-            <h2 id="experience" class="text-2xl font-semibold mb-4" data-en="Experience" data-ja="経験">Experience</h2>
+            <h2 id="experience" class="text-2xl font-semibold mb-4 [scroll-margin-top:64px]" data-en="Experience" data-ja="経験">Experience</h2>
             <div class="space-y-6">
-                <div class="flex items-start gap-4">
+                <div class="flex flex-col md:flex-row items-start gap-4">
                     <img src="assets/computer_vision.png" alt="Computer Vision" class="max-w-48 max-h-48 object-contain rounded aspect-auto">
                     <div>
                         <h3 class="text-xl font-bold" data-en="AI Engineer (Computer Vision)" data-ja="AIエンジニア（コンピュータビジョン）">AI Engineer (Computer Vision)</h3>
@@ -70,7 +70,7 @@
                         </ul>
                     </div>
                 </div>
-                <div class="flex items-start gap-4">
+                <div class="flex flex-col md:flex-row items-start gap-4">
                     <img src="assets/crash.gif" alt="Crash Simulation" class="max-w-48 max-h-48 object-contain rounded aspect-auto">
                     <div>
                         <h3 class="text-xl font-bold" data-en="CAE Engineer & Python Automation" data-ja="CAEエンジニア＆Python自動化">CAE Engineer & Python Automation</h3>
@@ -81,7 +81,7 @@
                         </ul>
                     </div>
                 </div>
-                <div class="flex items-start gap-4">
+                <div class="flex flex-col md:flex-row items-start gap-4">
                     <img src="assets/api.png" alt="Automation" class="max-w-48 max-h-48 object-contain rounded aspect-auto">
                     <div>
                         <h3 class="text-xl font-bold" data-en="CAE Engineer & Python Automation" data-ja="CAEエンジニア＆Python自動化">CAE Engineer & Python Automation</h3>
@@ -93,7 +93,7 @@
                         </ul>
                     </div>
                 </div>
-                <div class="flex items-start gap-4">
+                <div class="flex flex-col md:flex-row items-start gap-4">
                     <img src="assets/cad.png" alt="CAD" class="max-w-48 max-h-48 object-contain rounded aspect-auto">
                     <div>
                         <h3 class="text-xl font-bold" data-en="CAD Engineer" data-ja="CADエンジニア">CAD Engineer</h3>
@@ -106,7 +106,7 @@
                 </div>
             </div>
 
-            <h2 id="projects" class="text-2xl font-semibold mt-8 mb-4" data-en="Projects" data-ja="プロジェクト">Projects</h2>
+            <h2 id="projects" class="text-2xl font-semibold mt-8 mb-4 [scroll-margin-top:64px]" data-en="Projects" data-ja="プロジェクト">Projects</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="border p-4 rounded flex items-start gap-4">
                     <img src="assets/yolo_pool.png" alt="YOLO Project" class="max-w-32 max-h-32 object-contain rounded aspect-auto">
@@ -123,20 +123,20 @@
                     <img src="assets/smoke.gif" alt="Smoke Project" class="max-w-32 max-h-32 object-contain rounded aspect-auto">
                     <div>
                         <h3 class="font-bold" data-en="Smoke Segmentation" data-ja="煙セグメンテーション">Smoke Segmentation</h3>
-                        <ul class="list-none text-gray-600">
+                        <ul class="list-none text-center">
                             <li data-en="U-Net" data-ja="U-Net">U-Net</li>
-                            <li data-en="Segmentation" data-ja="セグメンテーション">Segmentation</li>
+                            <li data-en="Segmentation" data-ja="Segmentation">Segmentation</li>
                         </ul>
                         <a href="https://github.com/uyenvoaero/smoke_segmentation" class="text-blue-600">GitHub</a>
                     </div>
                 </div>
                 <div class="border p-4 rounded flex items-start gap-4">
-                    <img src="assets/change.png" alt="Change Detection" class="max-w-32 max-h-32 object-contain rounded aspect-auto">
+                    <img src="assets/change.png" alt="Change Detection" class="max-w-32 object-contain rounded aspect-auto">
                     <div>
                         <h3 class="font-bold" data-en="Change Detection" data-ja="変化検出">Change Detection</h3>
                         <ul class="list-none text-gray-600">
                             <li data-en="Siamese Network" data-ja="Siamese Network">Siamese Network</li>
-                            <li data-en="Change Detection" data-ja="変化検出">Change Detection</li>
+                            <li data-en="Change Detection" data-ja="Change Detection">Change Detection</li>
                         </ul>
                         <a href="https://github.com/uyenvoaero/change_detection" class="text-blue-600">GitHub</a>
                     </div>
@@ -147,7 +147,7 @@
 
     <!-- Hometown Section -->
     <section class="container mx-auto px-4 py-8 bg-gray-50 rounded-lg shadow">
-        <h2 class="text-2xl font-semibold mb-4 text-center" data-en="My Hometown" data-ja="私の故郷">My Hometown</h2>
+        <h2 class="text-2xl font-semibold text-center mb-6" data-en="My Hometown" data-ja="私の故郷">My Hometown</h2>
         <div class="flex flex-col md:flex-row gap-4 items-center justify-center max-w-2xl mx-auto">
             <img src="assets/cover.png" alt="Bao Loc, Vietnam" class="w-full md:w-1/2 h-auto rounded">
             <div class="w-full md:w-1/2 text-left text-gray-600">
@@ -158,7 +158,12 @@
 
     <!-- Footer -->
     <footer class="bg-gray-900 text-white text-center py-4">
-        <p data-en="Created by Vo Uyen - Thank you for visiting my profile!" data-ja="ヴォ ウエンによって作成 - 私のプロフィールをご覧いただきありがとう！">Created by Vo Uyen - Thank you for visiting my profile!</p>
+        <p>
+            <span data-en="Created by Vo Uyen" data-ja="ヴォ ウエンによって作成">Created by Vo Uyen</span>
+            <span class="hidden md:inline"> - </span>
+            <span class="inline md:hidden"><br></span>
+            <span data-en="Thank you for visiting my profile!" data-ja="私のプロフィールをご覧いただきありがとう！">Thank you for visiting my profile!</span>
+        </p>
     </footer>
 
     <!-- Language Switcher Script -->
